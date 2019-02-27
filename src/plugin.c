@@ -21,6 +21,11 @@
 #include "ts3_functions.h"
 #include "plugin.h"
 
+// jsmn - парсер json
+
+#include "../include/jsmn.h"
+jsmn_parser json;
+
 static struct TS3Functions ts3Functions;
 
 #ifdef _WIN32
@@ -82,6 +87,7 @@ void ts3plugin_setFunctionPointers(const struct TS3Functions funcs) {
  * If the function returns 1 on failure, the plugin will be unloaded again.
  */
 int ts3plugin_init() {
+	jsmn_init(&json);
   return 0;
 }
 
@@ -613,6 +619,10 @@ void ts3plugin_onMenuItemEvent(uint64 serverConnectionHandlerID, enum PluginMenu
 			switch(menuItemID) {
 				case MENU_ID_GLOBAL_1:
 					// ts3Functions.printMessageToCurrentTab("start prime.");
+
+					char pluginPath[PATH_BUFSIZE];
+					ts3Functions.getPluginPath(pluginPath, PATH_BUFSIZE, pluginID);
+					ts3Functions.printMessageToCurrentTab(pluginPath);
 
 					break;
 				case MENU_ID_GLOBAL_2:

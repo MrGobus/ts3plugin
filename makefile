@@ -4,8 +4,9 @@ LFLAGS=
 TARGET=plugin_win64.dll
 
 default: clear
+	$(CC) $(CFLAGS) -c src/jsmn.c
 	$(CC) $(CFLAGS) -c src/plugin.c
-	$(CC) -shared -o ${TARGET} plugin.o -Wl,--out-implib,libplugin_win64.a
+	$(CC) -shared -o ${TARGET} jsmn.o plugin.o -Wl,--out-implib,libplugin_win64.a
 
 clear:
 	rm -rf *.o

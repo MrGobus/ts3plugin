@@ -612,7 +612,8 @@ void ts3plugin_onMenuItemEvent(uint64 serverConnectionHandlerID, enum PluginMenu
 		case PLUGIN_MENU_TYPE_GLOBAL: // глобальное меню (то что сверху)
 			switch(menuItemID) {
 				case MENU_ID_GLOBAL_1:
-					ts3Functions.printMessageToCurrentTab("start prime.");
+					// ts3Functions.printMessageToCurrentTab("start prime.");
+
 					break;
 				case MENU_ID_GLOBAL_2:
 					ts3Functions.printMessageToCurrentTab("stop prime.");

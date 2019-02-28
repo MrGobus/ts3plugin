@@ -41,11 +41,9 @@ static struct TS3Functions ts3Functions;
 
 static char* pluginID = NULL;
 
-// jsmn - парсер json
+// cJSON
 
-#include "../include/jsmn.h"
-jsmn_parser jsmn_p;
-jsmntok_t jsmn_t[128];
+#include "../include/cJSON.h"
 
 // config
 
@@ -94,7 +92,6 @@ void ts3plugin_setFunctionPointers(const struct TS3Functions funcs) {
  * If the function returns 1 on failure, the plugin will be unloaded again.
  */
 int ts3plugin_init() {
-	jsmn_init(&jsmn_p);
   return 0;
 }
 
@@ -618,6 +615,7 @@ void ts3plugin_onClientMoveMovedEvent(uint64 serverConnectionHandlerID, anyID cl
 
 /**
  * Читает конфигурационный файл.
+ *
  * @param  serverConnectionHandlerID [description]
  * @param  configString - место куда будет помещен указатель на новый конфиг. Если старый конфиг содержит данные то они будут удалены командой free.
  * @param  configFileName - имя файла конфига. Файл должен быть размещен в папке плагинов TS3. Путь к папке получаем средствами TS3 Plugn SDK.
@@ -665,10 +663,30 @@ void ts3plugin_onMenuItemEvent(uint64 serverConnectionHandlerID, enum PluginMenu
 			switch(menuItemID) {
 				case MENU_ID_GLOBAL_1:
 					// ts3Functions.printMessageToCurrentTab("start prime.");
-
 					readConfigFromFile(serverConnectionHandlerID, configFileName, &configString);
-					ts3Functions.printMessageToCurrentTab(configString);
+					if (configString) {
+						cJSON *config = cJSON_Parse(configString);
+						if (config) {
+							const cJSON *channels = cJSON_GetObjectItemCaseSensitive(config, "channels");
+							if (channels) {
+							 	const cJSON* channel = NULL;
+								cJSON_ArrayForEach(channel, channels) {
+									if (cJSON_IsString(channel) && (channel->valuestring != NULL)) {
 
+										ts3Functions.printMessageToCurrentTab(channel->valuestring);
+										
+    							}
+								}
+							} else {
+								ts3Functions.printMessageToCurrentTab("Ошибка: Файл конфигурации не содержит списка каналов.");
+							}
+							cJSON_Delete(config);
+						} else {
+							ts3Functions.printMessageToCurrentTab("Ошибка: Не удалось выполнить парсинг конфигурационного файла.");
+						}
+					} else {
+						ts3Functions.printMessageToCurrentTab("Ошибка: Конфигурационный файл не найден.");
+					}
 					break;
 				case MENU_ID_GLOBAL_2:
 					ts3Functions.printMessageToCurrentTab("stop prime.");

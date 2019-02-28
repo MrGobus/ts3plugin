@@ -21,11 +21,6 @@
 #include "ts3_functions.h"
 #include "plugin.h"
 
-// jsmn - парсер json
-
-#include "../include/jsmn.h"
-jsmn_parser json;
-
 static struct TS3Functions ts3Functions;
 
 #ifdef _WIN32
@@ -45,6 +40,18 @@ static struct TS3Functions ts3Functions;
 #define RETURNCODE_BUFSIZE 128
 
 static char* pluginID = NULL;
+
+// jsmn - парсер json
+
+#include "../include/jsmn.h"
+jsmn_parser jsmn_p;
+jsmntok_t jsmn_t[128];
+
+// config
+
+#define CONFIG_FILE_NAME_PATH_SIZE PATH_BUFSIZE + 128
+const char* configFileName = "plugin_win64.json";
+char* configString = NULL;
 
 /*********************************** Required functions ************************************/
 
@@ -87,12 +94,17 @@ void ts3plugin_setFunctionPointers(const struct TS3Functions funcs) {
  * If the function returns 1 on failure, the plugin will be unloaded again.
  */
 int ts3plugin_init() {
-	jsmn_init(&json);
+	jsmn_init(&jsmn_p);
   return 0;
 }
 
 /* Custom code called right before the plugin is unloaded */
 void ts3plugin_shutdown() {
+	/* Освобождаем данные конфига */
+	if (configString) {
+		free(configString);
+		configString = NULL;
+	}
 	/* Free pluginID if we registered it */
 	if(pluginID) {
 		free(pluginID);
@@ -605,6 +617,40 @@ void ts3plugin_onClientMoveMovedEvent(uint64 serverConnectionHandlerID, anyID cl
 }
 
 /**
+ * Читает конфигурационный файл.
+ * @param  serverConnectionHandlerID [description]
+ * @param  configString - место куда будет помещен указатель на новый конфиг. Если старый конфиг содержит данные то они будут удалены командой free.
+ * @param  configFileName - имя файла конфига. Файл должен быть размещен в папке плагинов TS3. Путь к папке получаем средствами TS3 Plugn SDK.
+ * @return                           [description]
+ */
+
+const char* readConfigFromFile(uint64 serverConnectionHandlerID, const char* configFileName, char** configString) {
+	char configPath[CONFIG_FILE_NAME_PATH_SIZE];
+	ts3Functions.getPluginPath(configPath, PATH_BUFSIZE, pluginID);
+	strcat(configPath, configFileName);
+
+	if (*configString) {
+		free(*configString);
+		configString = NULL;
+	}
+
+	FILE* f = fopen(configPath, "rb");
+	if (f) {
+		fseek(f , 0 , SEEK_END);
+	  long fileSize = ftell(f);
+		rewind(f);
+
+		*configString = (char*)malloc(sizeof(char) * (fileSize + 1));
+		fread(*configString, 1, fileSize, f);
+		(*configString)[fileSize] = 0;
+
+		fclose(f);
+	}
+
+	return *configString;
+}
+
+/**
  * Обработчик нажатия кнопок меню и подменю
  *
  * @param serverConnectionHandlerID [description]
@@ -620,9 +666,8 @@ void ts3plugin_onMenuItemEvent(uint64 serverConnectionHandlerID, enum PluginMenu
 				case MENU_ID_GLOBAL_1:
 					// ts3Functions.printMessageToCurrentTab("start prime.");
 
-					char pluginPath[PATH_BUFSIZE];
-					ts3Functions.getPluginPath(pluginPath, PATH_BUFSIZE, pluginID);
-					ts3Functions.printMessageToCurrentTab(pluginPath);
+					readConfigFromFile(serverConnectionHandlerID, configFileName, &configString);
+					ts3Functions.printMessageToCurrentTab(configString);
 
 					break;
 				case MENU_ID_GLOBAL_2:

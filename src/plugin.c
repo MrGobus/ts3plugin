@@ -21,6 +21,8 @@
 #include "ts3_functions.h"
 #include "plugin.h"
 
+#include "../include/cJSON.h"
+
 static struct TS3Functions ts3Functions;
 
 #ifdef _WIN32
@@ -41,15 +43,19 @@ static struct TS3Functions ts3Functions;
 
 static char* pluginID = NULL;
 
-// cJSON
+/*
+ * Конфигурация.
+ */
 
-#include "../include/cJSON.h"
-
-// config
-
-#define CONFIG_FILE_NAME_PATH_SIZE PATH_BUFSIZE + 128
 const char* configFileName = "plugin_win64.json";
 char* configString = NULL;
+
+/*
+ * Список каналов для наблюдения.
+ */
+
+uint64* monitoringChannelIDs = NULL;
+int monitoringChannelIDs_length = 0;
 
 /*********************************** Required functions ************************************/
 
@@ -623,13 +629,13 @@ void ts3plugin_onClientMoveMovedEvent(uint64 serverConnectionHandlerID, anyID cl
  */
 
 const char* readConfigFromFile(uint64 serverConnectionHandlerID, const char* configFileName, char** configString) {
-	char configPath[CONFIG_FILE_NAME_PATH_SIZE];
+	char configPath[PATH_BUFSIZE + 256];
 	ts3Functions.getPluginPath(configPath, PATH_BUFSIZE, pluginID);
 	strcat(configPath, configFileName);
 
 	if (*configString) {
 		free(*configString);
-		configString = NULL;
+		*configString = NULL;
 	}
 
 	FILE* f = fopen(configPath, "rb");
@@ -649,6 +655,120 @@ const char* readConfigFromFile(uint64 serverConnectionHandlerID, const char* con
 }
 
 /**
+ * Пытается найти id канал по строке.
+ *
+ * @param serverConnectionHandlerID [description]
+ * @param channelAddressString - адрес канала.
+ * @return id канал или 0 если не найден.
+ */
+
+uint64 configValue_getChannelID(uint64 serverConnectionHandlerID, const char* channelAddressString) {
+
+	uint64 result = 0;
+
+	char emptyString[] = {0};
+
+	char* stringBuffer = (char*)malloc(sizeof(char) * (strlen(channelAddressString) + 1));
+	strcpy(stringBuffer, channelAddressString);
+
+	/* Если адрес не пустая строка */
+
+	char* sptr = stringBuffer;
+	if (*sptr) {
+
+		/* Определяем количество каналов в адресе */
+
+		int channelNames_length = 1;
+		while(*sptr) {
+			if (*sptr == '/') {
+				channelNames_length++;
+			}
+			sptr++;
+		}
+
+		/* Получаем указатели на имена каналов и пихаем их в массив */
+
+		char** channelNames = (char**)malloc(sizeof(char*) * (channelNames_length + 1));
+		channelNames[0] = stringBuffer;
+		sptr = stringBuffer;
+		int i = 1;
+		while(*sptr) {
+			if (*sptr == '/') {
+				*sptr = 0;
+				channelNames[i] = sptr + 1;
+				i++;
+			}
+			sptr++;
+		}
+
+		/* Добавляем в конец массива пустуют строку как требует ts3Functions.getChannelIDFromChannelNames */
+
+		channelNames[i] = emptyString;
+		channelNames_length++;
+
+		/* Получаем ID канала.*/
+
+		ts3Functions.getChannelIDFromChannelNames(serverConnectionHandlerID, channelNames, &result);
+
+		free(channelNames);
+
+	}
+
+	free(stringBuffer);
+
+	return result;
+}
+
+int getMonitoringChannelIDsFromConfigString(uint64 serverConnectionHandlerID, const char* configString, uint64** monitoringChannelIDs, int* monitoringChannelIDs_length) {
+
+	/* Обнуляем данные списка каналва для наблюдения */
+
+	if (*monitoringChannelIDs) {
+		free(*monitoringChannelIDs);
+		*monitoringChannelIDs = NULL;
+		*monitoringChannelIDs_length = 0;
+	}
+
+	/* Получаем список каналов для наблюдения из json и заполняем список monitoringChannelIDs */
+
+	cJSON *config = cJSON_Parse(configString);
+	if (config) {
+		const cJSON *channels = cJSON_GetObjectItemCaseSensitive(config, "channels");
+		if (channels) {
+			const cJSON* channel = NULL;
+
+			int channels_length = cJSON_GetArraySize(channels);
+			if (channels_length) {
+
+				*monitoringChannelIDs = (uint64*)malloc(sizeof(uint64) * channels_length);
+
+				cJSON_ArrayForEach(channel, channels) {
+					if (cJSON_IsString(channel) && (channel->valuestring != NULL)) {
+						uint64 channelID = configValue_getChannelID(serverConnectionHandlerID, channel->valuestring);
+						if (channelID) {
+							(*monitoringChannelIDs)[*monitoringChannelIDs_length] = channelID;
+							(*monitoringChannelIDs_length)++;
+						} else {
+							ts3Functions.printMessageToCurrentTab("Ошибка: Канал не найден.");
+							ts3Functions.printMessageToCurrentTab(channel->valuestring);
+						}
+					}
+				}
+
+			}
+		} else {
+			ts3Functions.printMessageToCurrentTab("Ошибка: Файл конфигурации не содержит списка каналов.");
+		}
+		cJSON_Delete(config);
+	} else {
+		ts3Functions.printMessageToCurrentTab("Ошибка: Не удалось выполнить парсинг конфигурационного файла.");
+	}
+
+	return *monitoringChannelIDs_length;
+
+}
+
+/**
  * Обработчик нажатия кнопок меню и подменю
  *
  * @param serverConnectionHandlerID [description]
@@ -662,31 +782,27 @@ void ts3plugin_onMenuItemEvent(uint64 serverConnectionHandlerID, enum PluginMenu
 		case PLUGIN_MENU_TYPE_GLOBAL: // глобальное меню (то что сверху)
 			switch(menuItemID) {
 				case MENU_ID_GLOBAL_1:
-					// ts3Functions.printMessageToCurrentTab("start prime.");
-					readConfigFromFile(serverConnectionHandlerID, configFileName, &configString);
-					if (configString) {
-						cJSON *config = cJSON_Parse(configString);
-						if (config) {
-							const cJSON *channels = cJSON_GetObjectItemCaseSensitive(config, "channels");
-							if (channels) {
-							 	const cJSON* channel = NULL;
-								cJSON_ArrayForEach(channel, channels) {
-									if (cJSON_IsString(channel) && (channel->valuestring != NULL)) {
 
-										ts3Functions.printMessageToCurrentTab(channel->valuestring);
-										
-    							}
-								}
-							} else {
-								ts3Functions.printMessageToCurrentTab("Ошибка: Файл конфигурации не содержит списка каналов.");
+					ts3Functions.printMessageToCurrentTab("start prime.");
+
+					if (readConfigFromFile(serverConnectionHandlerID, configFileName, &configString)) {
+						if (getMonitoringChannelIDsFromConfigString(serverConnectionHandlerID, configString, &monitoringChannelIDs, &monitoringChannelIDs_length)) {
+
+							ts3Functions.printMessageToCurrentTab("debug: Этот момент настал.");
+
+							char buffer[256];
+							for (int i = 0; i < monitoringChannelIDs_length; i++) {
+								sprintf(buffer, "%lld", monitoringChannelIDs[i]);
+								ts3Functions.printMessageToCurrentTab(buffer);
 							}
-							cJSON_Delete(config);
+
 						} else {
-							ts3Functions.printMessageToCurrentTab("Ошибка: Не удалось выполнить парсинг конфигурационного файла.");
+							ts3Functions.printMessageToCurrentTab("Ошибка: Список каналов для мониторинга пуст.");
 						}
 					} else {
 						ts3Functions.printMessageToCurrentTab("Ошибка: Конфигурационный файл не найден.");
 					}
+
 					break;
 				case MENU_ID_GLOBAL_2:
 					ts3Functions.printMessageToCurrentTab("stop prime.");

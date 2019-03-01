@@ -1,3 +1,6 @@
+# Сборка под MinGW 64
+# Возможно соберется под linux, но вот хз =)
+
 CC=g++
 CFLAGS=-Wall -Iinclude
 LFLAGS=

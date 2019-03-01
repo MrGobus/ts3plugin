@@ -108,6 +108,12 @@ void ts3plugin_shutdown() {
 		free(configString);
 		configString = NULL;
 	}
+	/* Обнуляем данные списка каналва для наблюдения */
+	if (monitoringChannelIDs) {
+		free(monitoringChannelIDs);
+		monitoringChannelIDs = NULL;
+		monitoringChannelIDs_length = 0;
+	}
 	/* Free pluginID if we registered it */
 	if(pluginID) {
 		free(pluginID);
